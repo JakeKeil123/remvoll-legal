@@ -12,10 +12,10 @@
 <body><main>
   <div class="crumb"><a href="index.html">&larr; Legal &amp; Trust</a></div>
   <h1>Data Handling Documentation</h1>
-  <p class="updated">Technical reference · July 7, 2026 · Version 2.1</p>
+  <p class="updated">Technical reference · September 24, 2026 · Version 2.5</p>
   <p>This document provides a detailed technical account of how Remvoll stores and protects data, complementing the plain-language Privacy Policy. It is intended for privacy-conscious users, security reviewers, and enterprise or regulatory diligence.</p>
   <h2>1. Architecture overview</h2>
-  <p>Remvoll for iOS is a local-first native application. All persistence is on the user's device: settings, presets and rest history in the app's sandboxed container, secrets in the iOS Keychain. There is no backend application server, no cloud database, no sync service, and no telemetry pipeline. The app ships with no third-party SDKs of any kind — no analytics, advertising, attribution, or crash-reporting libraries — and makes no network requests in normal use. All audio is synthesised on the device.</p>
+  <p>Remvoll for iOS is a local-first native application. All persistence is on the user's device: settings, presets, sleep history and any background photos in the app's sandboxed container, secrets in the iOS Keychain. There is no backend application server, no cloud database, no sync service, and no telemetry pipeline. The app ships with no third-party SDKs of any kind — no analytics, advertising, attribution, or crash-reporting libraries — and makes no network requests in normal use. All audio is synthesised on the device.</p>
   <h2>2. Encryption at rest</h2>
   <ul>
     <li>Every stored record is encrypted using <strong>AES-256 in GCM mode</strong> with a fresh, cryptographically-random 96-bit initialization vector per write, providing both confidentiality and integrity (authenticated encryption).</li>
@@ -25,24 +25,29 @@
   </ul>
   <h2>3. Data inventory</h2>
   <ul>
-    <li><strong>settings</strong> — theme, volume, breathing pace and depth, sleep timer, microphone mode, effects and haptics toggles, alarms, last mix, jet-lag plan, and the version of the terms you accepted. Purpose: preferences. Retained until you delete the app.</li>
+    <li><strong>settings</strong> — theme, volume, breathing pace and depth, sleep timer, microphone mode, effects and haptics toggles, alarms, last mix, jet-lag plan, app-blocking schedules, and the version of the terms you accepted. Purpose: preferences. Retained until you delete the app.</li>
+    <li><strong>sleep-timing pattern</strong> — running statistics about when you fall asleep and how your sleep cycles run, folded out of Apple Health readings where you have allowed them. No samples, no per-night records. Purpose: so Smart Wake can aim for a light moment without a Watch. Retained until you erase your sleep history or delete the app.</li>
     <li><strong>presets</strong> — the sound mixes you name and save. Purpose: core feature. Retained until you delete them or the app.</li>
-    <li><strong>sessions</strong> — playback summaries: start and end time, duration, sounds and intensities, breathing setting, disturbance counts. Purpose: your Rest page. Retained as a rolling window of the last 400 sessions, or until <em>Erase analytics</em>.</li>
+    <li><strong>sessions</strong> — playback summaries: start and end time, duration, sounds and intensities, breathing setting, disturbance counts. Purpose: your Sleep Score page. Retained as a rolling window of the last 400 sessions, or until <em>Erase sleep history</em>.</li>
     <li><strong>alarm bookkeeping</strong> (in UserDefaults, not encrypted, because it is not personal) — the mapping from our alarm identifiers to the system's, the tone each alarm uses, and per-day snooze counts. Retained until the alarm is deleted.</li>
+    <li><strong>morning note</strong> (encrypted, only if you record or type one) — a short recording made deliberately from the alarm screen, and its text where offline dictation is available. Purpose: showing you the note the next morning. Retained until you record another one, which replaces it, or until you delete it. Exactly one exists at a time.</li>
+    <li><strong>app-blocking rules</strong> (in a shared App Group container, not encrypted, because the monitor extension has to be able to read them and cannot reach the encrypted store) — the schedules you create: their times, days, name and on/off state; for each rule, an OPAQUE TOKEN BLOB returned by iOS describing which apps you picked; and a record of which block is in force right now and when it ends. <strong>The token blob is not readable by us or by the app.</strong> iOS hands back sealed identifiers rather than names, so Remvoll genuinely cannot tell which apps you chose, cannot count them by name, and cannot see whether you ever opened them. Purpose: blocking apps when you asked, and lifting the block on time. Retained until you delete the rule or the app.</li>
+    <li><strong>background photos</strong> (in the app container, not encrypted by Remvoll, only if you add one) — the part of a picture you framed, saved at screen size, plus a small thumbnail. iOS gives the app only the picture you pick, never your library. Not excluded from backups, so they are included in an iCloud or computer backup of your iPhone like other app files. Purpose: your background. Retained until you remove the photo (touch and hold it in Settings › Background) or delete the app.</li>
     <li><strong>encryption key</strong> (in the Keychain, not in the container) — used to encrypt everything above. Removed with the app.</li>
   </ul>
   <p>There is <strong>no users record, no session, no credential store and no membership record</strong>, because there are no accounts and Apple holds the subscription.</p>
   <h2>4. Data flows</h2>
   <ul>
-    <li><strong>Microphone (opt-in only):</strong> device audio → an in-memory level meter → one root-mean-square loudness value every couple of seconds → either a disturbance count for your Rest page or a small bounded adjustment to playback volume. The buffer is discarded immediately; audio is never recorded, encoded, persisted or sent anywhere, and the microphone is released when the mode is turned off or playback stops.</li>
-    <li><strong>HealthKit (opt-in only):</strong> sleep-stage and heart-rate samples are read from Apple Health on the device, scored to choose a moment for Smart Wake, and used for that night only. Access is read-only; Remvoll never writes to Health, and the samples are never copied off the device.</li>
+    <li><strong>Microphone (opt-in only):</strong> device audio → an in-memory level meter → one root-mean-square loudness value every couple of seconds → either a disturbance count for your Sleep Score page or a small bounded adjustment to playback volume. The buffer is discarded immediately; audio is never recorded, encoded, persisted or sent anywhere, and the microphone is released when the mode is turned off or playback stops.</li>
+    <li><strong>Screen Time / Family Controls (opt-in only):</strong> your choice of apps is made in an Apple-provided picker that returns sealed tokens rather than names, so no app identity ever reaches Remvoll. The tokens, your schedules and the currently-active block are stored in a shared App Group container so a background helper can lift a block on time. No app-usage information is read, derived, retained or transmitted, and nothing leaves the device.</li>
+    <li><strong>HealthKit (opt-in only):</strong> sleep and heart-rate samples, as recorded by an Apple Watch or another device or app that writes to Apple Health, are read on the device to choose a moment for Smart Wake and to work out the Sleep Score. The samples are used for that night and not retained, and the Sleep Score's figures are recomputed from Health each time its page opens rather than stored. A derived statistical summary of your sleep timing IS retained on the device — see "Health readings" above for exactly what it contains and does not contain — so that Smart Wake continues to work on nights you do not wear a Watch. Access is read-only; Remvoll never writes to Health, and neither the samples nor the derived summary is ever copied off the device.</li>
     <li><strong>Exports:</strong> user-initiated. A JSON document is assembled in memory and handed to the iOS share sheet, where you choose the destination. Nothing is transmitted by the app itself.</li>
     <li><strong>Network:</strong> none in normal use. The app makes no requests, has no analytics endpoint, and contains no third-party SDK that could make one.</li>
   </ul>
   <h2>5. Deletion and portability</h2>
   <ul>
-    <li><em>You › Export my data</em> yields a complete, human-readable JSON copy for portability.</li>
-    <li><em>You › Erase analytics</em> clears your rest history and leaves presets and settings alone.</li>
+    <li><em>Settings › Export my data</em> yields a complete, human-readable JSON copy for portability.</li>
+    <li><em>Settings › Erase sleep history</em> clears your sleep history and the sleep-timing pattern, and leaves presets and settings alone.</li>
     <li><strong>Deleting the app</strong> removes everything: the container, every encrypted record and the Keychain key, which makes any residual ciphertext permanently undecryptable. There is no separate "delete account" step because there is no account to delete.</li>
   </ul>
   <h2>6. Backups, sync, and recovery</h2>
@@ -51,7 +56,7 @@
   <p>Remvoll engages no sub-processors, because no personal data leaves the device. Apple acts as the merchant of record for subscriptions and receives your payment details directly under its own terms; it receives no Remvoll data, because the app sends none. If any processor is ever introduced, it will be listed here with its role and location before it goes live.</p>
   <h2>8. Breach considerations</h2>
   <p>Because Remvoll holds no centralised store of user data, the class of risk represented by a server-side breach does not exist. The residual risk is local: access to an unlocked iPhone. Protect the device with a passcode, Face ID or Touch ID, and use the Export and Erase controls as appropriate. Should a future networked feature change this risk profile, we will maintain an incident-response process and notify affected users and regulators as required by applicable law.</p>
-  <p>Technical or diligence questions: security@remvoll.app (placeholder until public launch).</p>
+  <p>Technical or diligence questions: security@remvoll.com.</p>
   <footer>Remvoll runs entirely on your device. Questions: legal@remvoll.app</footer>
 </main></body>
 </html>
